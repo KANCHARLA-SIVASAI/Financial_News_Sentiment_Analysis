@@ -554,4 +554,4 @@ st.sidebar.write(
     "for text processing and a scikit-learn Random Forest model for classification."
 )
 st.sidebar.markdown("---")
-st.sidebar.write("Developed by Gemini AI")
+# st.sidebar.write("Developed by Gemini AI")
