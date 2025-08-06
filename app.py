@@ -291,8 +291,28 @@ def extract_svo_sentiment_score(text):
     return score
 
 
-# --- Combined Feature Extraction Function ---
+# --- Combined Feature Extraction Function (for single text) ---
 def extract_features_from_text(text):
+    # Ensure text is not empty before processing
+    if not text:
+        return {
+            'sentiment_score_vader': 0.0,
+            'strong_word_count': 0,
+            'keyword_position_score': 0.0,
+            'named_entity_count': 0,
+            'lm_positive_score': 0,
+            'lm_negative_score': 0,
+            'negation_flip_count': 0,
+            'event_phrase_score': 0,
+            'verb_near_org_count': 0,
+            'adj_noun_combo_count': 0,
+            'entity_verb_sentiment_score': 0,
+            'first_half_sentiment': 0.0,
+            'second_half_sentiment': 0.0,
+            'sentiment_reversal': 0,
+            'svo_sentiment_score': 0
+        }
+
     first_half_sent, second_half_sent, reversal_flag = polarity_window_scan(text)
 
     return {
@@ -313,6 +333,56 @@ def extract_features_from_text(text):
         'svo_sentiment_score': extract_svo_sentiment_score(text)
     }
 
+# --- Function to extract features and predict for multiple texts ---
+def analyze_multiple_texts(texts_list):
+    if not texts_list:
+        return []
+
+    all_features = []
+    for text in texts_list:
+        features = extract_features_from_text(text)
+        all_features.append(features)
+    
+    features_df = pd.DataFrame(all_features)
+
+    feature_columns = [
+        'sentiment_score_vader',
+        'strong_word_count',
+        'keyword_position_score',
+        'named_entity_count',
+        'lm_positive_score',
+        'lm_negative_score',
+        'negation_flip_count',
+        'event_phrase_score',
+        'verb_near_org_count',
+        'adj_noun_combo_count',
+        'entity_verb_sentiment_score',
+        'first_half_sentiment',
+        'second_half_sentiment',
+        'sentiment_reversal',
+        'svo_sentiment_score'
+    ]
+    # Reindex to ensure consistent column order, filling missing with 0
+    features_df = features_df.reindex(columns=feature_columns, fill_value=0)
+
+    predictions = rf_model.predict(features_df)
+    probabilities = rf_model.predict_proba(features_df)
+
+    results = []
+    for i, text in enumerate(texts_list):
+        predicted_label_encoded = predictions[i]
+        predicted_sentiment = label_encoder.inverse_transform([predicted_label_encoded])[0]
+        prob_dict = dict(zip(label_encoder.classes_, probabilities[i]))
+        
+        results.append({
+            'text': text,
+            'sentiment': predicted_sentiment,
+            'confidence': prob_dict,
+            'features': all_features[i]
+        })
+    return results
+
+
 # --- Streamlit App ---
 st.set_page_config(
     page_title="Financial News Sentiment Analyzer",
@@ -321,16 +391,32 @@ st.set_page_config(
     initial_sidebar_state="auto"
 )
 
-# Custom CSS for a modern, dark theme
+# Custom CSS for a modern, dark theme with background image
 st.markdown("""
 <style>
     /* Main App Container */
     .stApp {
-        background-color: #121212;
+        background-color: #be2fed; /* Fallback color */
+        background-image: url("https://images.unsplash.com/photo-1543286386-713bdd59760f?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"); /* Placeholder image URL */
+        background-size: cover; /* Cover the entire container */
+        background-repeat: no-repeat; /* Do not repeat the image */
+        background-attachment: fixed; /* Fix the background image when scrolling */
         color: #e0e0e0;
         font-family: 'Segoe UI', 'Roboto', 'Helvetica', sans-serif;
     }
     
+    /* Optional: Add a semi-transparent overlay to improve text readability */
+    .stApp::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.5); /* Dark overlay with 50% opacity */
+        z-index: -1; /* Place behind content */
+    }
+
     /* Headers and Titles */
     h1 {
         font-size: 2.5em;
@@ -452,6 +538,24 @@ st.markdown("""
         color: #ffffff;
         border-bottom: none;
     }
+    /* Checkbox styling for news selection */
+    .stCheckbox label {
+        color: #e0e0e0;
+    }
+    .stCheckbox > label > div {
+        background-color: #282828;
+        border-radius: 5px;
+        padding: 8px;
+        margin-bottom: 5px;
+        border: 1px solid #333333;
+    }
+    .stCheckbox > label > div:hover {
+        background-color: #3a3a3a;
+    }
+    .stCheckbox > label > div[aria-checked="true"] {
+        border-color: #00a884;
+        background-color: #00a88420;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -464,18 +568,18 @@ st.write(
 )
 st.markdown("---")
 
-# Input section
-st.header("✍️ Enter Your Text")
+# --- Single Text Input Section ---
+st.header("✍️ Enter Your Text (Single Prediction)")
 user_input = st.text_area(
     "Type or paste a financial news headline here:",
-    "",
+    "", # No pre-population from API anymore
     height=150,
     placeholder="e.g., 'Company X reports record profits amid strong market performance'"
 )
 
 col1, col2, col3 = st.columns([1, 2, 1])
 with col2:
-    if st.button("🚀 Predict Sentiment"):
+    if st.button("🚀 Predict Sentiment (Single Text)"):
         if user_input:
             with st.spinner("Analyzing sentiment..."):
                 # Extract features
@@ -511,7 +615,7 @@ with col2:
                     predicted_sentiment = label_encoder.inverse_transform([predicted_label_encoded])[0]
 
                     st.markdown("---")
-                    st.header("📊 Prediction Result")
+                    st.header("📊 Prediction Result (Single Text)")
                     if predicted_sentiment == 'positive':
                         st.success(f"Sentiment: {predicted_sentiment.upper()} 🎉")
                     elif predicted_sentiment == 'negative':
@@ -540,6 +644,46 @@ with col2:
             st.warning("Please enter some text to predict.")
 
 st.markdown("---")
+
+# --- Multiple Manual Input Section ---
+st.header("📝 Analyze Multiple Texts (Manual Input)")
+multi_user_input = st.text_area(
+    "Enter multiple financial news headlines (one per line):",
+    "",
+    height=200,
+    placeholder="e.g.,\nCompany A announces record profits.\nStock market experiences a sharp decline.\nNew policy has neutral impact on economy."
+)
+
+if st.button("🚀 Predict Sentiments for Multiple Texts"):
+    if multi_user_input:
+        texts_to_analyze = [line.strip() for line in multi_user_input.split('\n') if line.strip()]
+        if texts_to_analyze:
+            with st.spinner("Analyzing multiple texts..."):
+                multi_results = analyze_multiple_texts(texts_to_analyze)
+                st.markdown("---")
+                st.header("📈 Multi-Text Sentiment Results")
+                if multi_results:
+                    for i, result in enumerate(multi_results):
+                        st.subheader(f"Text {i+1}: {result['sentiment'].upper()}")
+                        st.write(f"**Text:** {result['text']}")
+                        
+                        prob_cols = st.columns(len(result['confidence']))
+                        for j, (label, prob) in enumerate(result['confidence'].items()):
+                            with prob_cols[j]:
+                                st.metric(label=label.capitalize(), value=f"{prob*100:.2f}%")
+                        
+                        with st.expander(f"🔍 View Extracted Features for Text {i+1}"):
+                            st.json(result['features'])
+                        st.markdown("---")
+                else:
+                    st.info("No valid texts entered for analysis.")
+        else:
+            st.warning("Please enter at least one headline for multi-text analysis.")
+    else:
+        st.warning("Please enter some text for multi-text analysis.")
+
+
+st.markdown("---")
 st.info(
     "**How it works:** This app extracts various linguistic features from your text, "
     "such as sentiment scores, keyword positions, named entity counts, and "
@@ -554,4 +698,4 @@ st.sidebar.write(
     "for text processing and a scikit-learn Random Forest model for classification."
 )
 st.sidebar.markdown("---")
-# st.sidebar.write("Developed by Gemini AI")
+st.sidebar.write("Developed by: \n* Ganapathi \n* sriram \n* sivasai \n* shivathmika \n* varsha")
