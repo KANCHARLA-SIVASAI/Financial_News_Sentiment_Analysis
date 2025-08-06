@@ -1,6 +1,8 @@
 streamlit
-pandas
 scikit-learn
+pandas
+numpy
+matplotlib
+xgboost
 nltk
 spacy
-joblib
