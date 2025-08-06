@@ -1,5 +1,3 @@
 [server]
 headless = true
-
-[server.runOnSave]
-enabled = true
+runOnSave = false
